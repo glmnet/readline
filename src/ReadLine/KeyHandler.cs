@@ -94,13 +94,24 @@ namespace Internal.ReadLine
             _text.Clear();
         }
 
-        private void ClearToEnd(int startPos)
+        private void ClearToStart()
         {
-            var clear = new string(WhiteSpace, _text.Length - startPos);
-            CursorPosition = startPos;
+            var pos = CursorPosition;
+            var length = _text.Length;
+            _text.Remove(0, CursorPosition);
+            var clear = _text.ToString() + new string(WhiteSpace, CursorPosition);
+            MoveCursorHome();
             Write(clear);
-            CursorPosition = startPos;
-            _text.Remove(startPos, _text.Length - startPos);
+            MoveCursorHome();
+        }
+
+        private void ClearToEnd()
+        {
+            var pos = CursorPosition;
+            var clear = new string(WhiteSpace, _text.Length - pos);
+            Write(clear);
+            CursorPosition = pos;
+            _text.Remove(pos, _text.Length - pos);
         }
 
         private void SetBufferString(string str)
@@ -158,7 +169,12 @@ namespace Internal.ReadLine
 
         private void TransposeChars()
         {
-            // TODO
+            if (CursorPosition == 0) return;
+            if (CursorPosition == _text.Length) CursorPosition -= 2; else CursorPosition -= 1;
+            var transpose = _text.ToString(CursorPosition, 2);
+            _text[CursorPosition] = transpose[1];
+            _text[CursorPosition + 1] = transpose[0];
+            Write(transpose[1].ToString() + transpose[0]);
         }
 
         private void StartAutoComplete()
@@ -254,7 +270,7 @@ namespace Internal.ReadLine
             CursorPosition = newCursorPosition;
         }
 
-        public KeyHandler(IConsole console, List<string> history, IAutoCompleteHandler autoCompleteHandler, int promptLength)
+        public KeyHandler(IConsole console, List<string> history, IAutoCompleteHandler autoCompleteHandler)
         {
             Console2 = console;
 
@@ -266,15 +282,17 @@ namespace Internal.ReadLine
                 { ConsoleModifiers.Control, new Dictionary<ConsoleKey, Action> {
                     { ConsoleKey.A, MoveCursorHome },
                     { ConsoleKey.B, MoveCursorLeft },
+                    { ConsoleKey.D, Delete },
                     { ConsoleKey.E, MoveCursorEnd },
                     { ConsoleKey.F, MoveCursorRight },
+                    { ConsoleKey.H, Backspace },
+                    { ConsoleKey.K, ClearToEnd },
                     { ConsoleKey.L, ClearBuffer },
-                    { ConsoleKey.P, PrevHistory },
                     { ConsoleKey.N, NextHistory },
-                    { ConsoleKey.U, ClearBuffer },
-                    { ConsoleKey.K, () => ClearToEnd(CursorPosition) },
-                    { ConsoleKey.W, CutPreviousWord },
+                    { ConsoleKey.P, PrevHistory },
                     { ConsoleKey.T, TransposeChars },
+                    { ConsoleKey.U, ClearToStart },
+                    { ConsoleKey.W, CutPreviousWord },
                     { ConsoleKey.LeftArrow, MoveCursorLeftWord },
                     { ConsoleKey.RightArrow, MoveCursorRightWord }
                 } },
