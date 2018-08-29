@@ -48,6 +48,8 @@ namespace System
             ConsoleKeyInfo keyInfo = Console.ReadKey(true);
             while (keyInfo.Key != ConsoleKey.Enter)
             {
+                Console.Title = $"W: {Console.BufferWidth} H: {Console.BufferHeight}";
+
                 keyHandler.Handle(keyInfo);
                 keyInfo = Console.ReadKey(true);
             }

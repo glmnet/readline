@@ -1,5 +1,4 @@
 using Internal.ReadLine.Abstractions;
-
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -8,7 +7,8 @@ namespace Internal.ReadLine
 {
     internal class KeyHandler
     {
-        private readonly int _promptLength;
+        private const char WhiteSpace = ' ';
+        private int _cursorPosition = 0;
         private StringBuilder _text;
         private List<string> _history;
         private int _historyIndex;
@@ -19,165 +19,156 @@ namespace Internal.ReadLine
         private int _completionsIndex;
         private IConsole Console2;
 
-        private bool IsStartOfLine() => Console2.CursorLeft == 0;
+        public char[] WordSeparators = new[] { ' ', '/' };
 
-        private bool IsEndOfLine() => Console2.CursorLeft == _text.Length + _promptLength;
-
-        private bool IsStartOfBuffer() => Console2.CursorLeft == 0;
-
-        private bool IsEndOfBuffer() => Console2.CursorLeft == Console2.BufferWidth - 1;
         private bool IsInAutoCompleteMode() => _completions != null;
+
+        private int CursorPosition
+        {
+            get => _cursorPosition;
+            set
+            {
+                if (value < 0 || value > _text.Length) throw new ArgumentOutOfRangeException(nameof(value));
+                var bufferWidth = Console2.BufferWidth;
+                var offset = value - _cursorPosition;
+                var col = Math.Abs(((offset % bufferWidth) + Console2.CursorLeft + bufferWidth) % bufferWidth);
+                var promptLength = Math.Abs(Console2.CursorLeft - (_cursorPosition % bufferWidth));
+                var originRow = (promptLength + _cursorPosition) / bufferWidth;
+                var destRow = (promptLength + value) / bufferWidth;
+                var row = Console2.CursorTop + destRow - originRow;
+                Console2.SetCursorPosition(col, row);
+                _cursorPosition = value;
+            }
+        }
+
+        void Write(string value)
+        {
+            Console2.Write(value);
+            _cursorPosition += value.Length;
+        }
 
         private void MoveCursorLeft()
         {
-            if (IsStartOfLine())
-                return;
-
-            if (Console2.CursorLeft == _promptLength)
-                return;
-
-            if (IsStartOfBuffer())
-                Console2.SetCursorPosition(Console2.BufferWidth - 1, Console2.CursorTop - 1);
-            else
-                Console2.SetCursorPosition(Console2.CursorLeft - 1, Console2.CursorTop);
+            if (CursorPosition > 0)
+                CursorPosition--;
         }
 
-        private void MoveCursorHome()
-        {
-            Console2.SetCursorPosition(_promptLength, Console2.CursorTop);
-        }
+        private void MoveCursorHome() => CursorPosition = 0;
 
         private void MoveCursorRight()
         {
-            if (IsEndOfLine())
-            {
-                return;
-            }
-
-            if (IsEndOfBuffer())
-            {
-                Console2.SetCursorPosition(0, Console2.CursorTop + 1);
-            }
-            else
-            {
-                Console2.SetCursorPosition(Console2.CursorLeft + 1, Console2.CursorTop);
-            }
+            if (CursorPosition < _text.Length)
+                CursorPosition++;
         }
 
-        private void MoveCursorEnd()
+        private void MoveCursorEnd() => CursorPosition = _text.Length;
+
+        private void MoveCursorLeftWord()
         {
-            while (!IsEndOfLine())
-                MoveCursorRight();
+            if (CursorPosition == 0) return;
+            var buffer = _text.ToString(0, CursorPosition);
+            var trimmedBuffer = buffer.TrimEnd();
+            var trimEnd = buffer.Length - trimmedBuffer.Length;
+            var pos = trimmedBuffer.LastIndexOfAny(WordSeparators, CursorPosition - trimEnd - 1) + 1;
+            if (pos < 0) pos = 0;
+            CursorPosition = pos;
         }
 
-        private void ClearLine()
+        private void MoveCursorRightWord()
         {
-            ClearLine(_promptLength);
+            if (CursorPosition == _text.Length) return;
+            var buffer = _text.ToString(CursorPosition, _text.Length - CursorPosition);
+            var trimmedBuffer = buffer.TrimStart();
+            var trimStart = buffer.Length - trimmedBuffer.Length;
+            var pos = buffer.IndexOfAny(WordSeparators, trimStart);
+            if (pos < 0)
+                CursorPosition = _text.Length;
+            else CursorPosition += pos;
         }
 
-        private void ClearLine(int startPos)
+        private void ClearBuffer()
         {
-            var clear = new string('·', Console2.BufferWidth - startPos);
-            int cursorTop = Console2.CursorTop;
-            Console2.SetCursorPosition(startPos, cursorTop);
-            Console2.Write(clear);            
-            Console2.SetCursorPosition(startPos, cursorTop);
-        }
-
-        private void WriteString(string str)
-        {
+            CursorPosition = 0;
+            Write(new string(WhiteSpace, _text.Length));
+            CursorPosition = 0;
             _text.Clear();
-            _text.Append(str);
-            Console2.Write(_text.ToString());
+        }
+
+        private void ClearToEnd(int startPos)
+        {
+            var clear = new string(WhiteSpace, _text.Length - startPos);
+            CursorPosition = startPos;
+            Write(clear);
+            CursorPosition = startPos;
+            _text.Remove(startPos, _text.Length - startPos);
+        }
+
+        private void SetBufferString(string str)
+        {
+            var bufferLength = _text.Length;
+            _text.Clear().Append(str);
+            MoveCursorHome();
+            if (str.Length < bufferLength)
+                Write(_text.ToString() + new string(WhiteSpace, bufferLength - str.Length));
+            else
+                Write(_text.ToString());
+            MoveCursorEnd();
         }
 
         private void WriteChar(char c)
         {
-            if (Console2.CursorLeft >= _text.Length + _promptLength)
+            if (char.IsControl(c)) return;
+
+            int insertPos = CursorPosition;
+            if (insertPos >= _text.Length)
             {
                 _text.Append(c);
-                Console2.Write(c.ToString());
+                Write(c.ToString());
             }
             else
             {
-                int origPos = Console2.CursorLeft;
-                _text.Insert(origPos - _promptLength, c);
-                ClearLine();
-                Console2.Write(_text.ToString());
-                Console2.SetCursorPosition(origPos + 1, Console2.CursorTop);
+                _text.Insert(insertPos, c);
+                Write(_text.ToString(insertPos, _text.Length - insertPos));
+                CursorPosition = insertPos + 1;
             }
         }
 
         private void Backspace()
         {
-            if (IsStartOfLine())
+            int removePos = CursorPosition - 1;
+            if (removePos > -1)
             {
-                ResetAutoComplete();
-                return;
+                _text.Remove(removePos, 1);
+                CursorPosition = removePos;
+                Write(_text.ToString(removePos, _text.Length - removePos) + " ");
+                CursorPosition = removePos;
             }
-            if (Console2.CursorLeft > _promptLength)
-            {
-                int origPos = Console2.CursorLeft;
-                _text.Remove(origPos - _promptLength - 1, 1);
-                ClearLine();
-                WriteString(_text.ToString());
-                Console2.SetCursorPosition(origPos - 1, Console2.CursorTop);
-            }
+            else ResetAutoComplete();
         }
 
         private void Delete()
         {
-            if (IsEndOfLine())
-            {
-                return;
-            }
+            int deletePos = CursorPosition;
+            if (deletePos == _text.Length) return;
 
-            int origPos = Console2.CursorLeft;
-            if ((Console2.CursorLeft - _promptLength) < _text.Length)
-            {
-                _text.Remove(Console2.CursorLeft - _promptLength, 1);
-                ClearLine();
-                WriteString(_text.ToString());
-                Console2.SetCursorPosition(origPos, Console2.CursorTop);
-            }
+            _text.Remove(deletePos, 1);
+            Write(_text.ToString(deletePos, _text.Length - deletePos) + " ");
+            CursorPosition = deletePos;
         }
 
         private void TransposeChars()
         {
-            bool almostEndOfLine() => (Console2.BufferWidth - Console2.CursorLeft) == 1;
-            int incrementIf(Func<bool> expression, int index) => expression() ? index + 1 : index;
-            int decrementIf(Func<bool> expression, int index) => expression() ? index - 1 : index;
-
-            if (IsStartOfLine()) { return; }
-
-            var firstIdx = decrementIf(IsEndOfLine, Console2.CursorLeft - 1);
-            var secondIdx = decrementIf(IsEndOfLine, Console2.CursorLeft);
-
-            var secondChar = _text[secondIdx];
-            _text[secondIdx] = _text[firstIdx];
-            _text[firstIdx] = secondChar;
-
-            var left = incrementIf(almostEndOfLine, Console2.CursorLeft);
-            var cursorPosition = incrementIf(almostEndOfLine, Console2.CursorLeft);
-
-            ClearLine();
-            WriteString(_text.ToString());
-
-            Console2.SetCursorPosition(left, Console2.CursorTop);
-            MoveCursorRight();
+            // TODO
         }
 
         private void StartAutoComplete()
         {
-            ClearLine(_completionStart + _promptLength);
             _completionsIndex = 0;
-
             WriteAutoComplete();
         }
 
         private void NextAutoComplete()
         {
-            ClearLine(_completionStart + _promptLength);
             _completionsIndex++;
 
             if (_completionsIndex == _completions.Length)
@@ -188,7 +179,6 @@ namespace Internal.ReadLine
 
         private void PreviousAutoComplete()
         {
-            ClearLine(_completionStart + _promptLength);
             _completionsIndex--;
 
             if (_completionsIndex == -1)
@@ -201,13 +191,12 @@ namespace Internal.ReadLine
         {
             if (_text.ToString().Contains(" "))
             {
-                var separator = _text.ToString().LastIndexOf(' ');
-                ClearLine();
-                WriteString(_text.ToString().Substring(0, separator) + " " + _completions[_completionsIndex]);
+                var separator = _text.ToString().LastIndexOf(WhiteSpace);
+                SetBufferString(_text.ToString().Substring(0, separator) + " " + _completions[_completionsIndex]);
             }
             else
             {
-                WriteString(_completions[_completionsIndex]);
+                SetBufferString(_completions[_completionsIndex]);
             }
         }
 
@@ -216,8 +205,7 @@ namespace Internal.ReadLine
             if (_historyIndex > 0)
             {
                 _historyIndex--;
-                ClearLine();
-                WriteString(_history[_historyIndex]);
+                SetBufferString(_history[_historyIndex]);
             }
         }
 
@@ -226,10 +214,9 @@ namespace Internal.ReadLine
             if (_historyIndex < _history.Count)
             {
                 _historyIndex++;
-                ClearLine();
                 if (_historyIndex != _history.Count)
                 {
-                    WriteString(_history[_historyIndex]);
+                    SetBufferString(_history[_historyIndex]);
                 }
             }
         }
@@ -248,9 +235,27 @@ namespace Internal.ReadLine
             }
         }
 
+        public void CutPreviousWord()
+        {
+            if (CursorPosition < 1) return;
+            var buffer = _text.ToString();
+            var trimEndChars = buffer.Length - buffer.TrimEnd().Length + 1;
+            var previousSpace = buffer.LastIndexOf(WhiteSpace, CursorPosition - trimEndChars);
+            int removeChars;
+            if (previousSpace == -1)
+                removeChars = CursorPosition;
+            else removeChars = CursorPosition - previousSpace - 1;
+
+            _text.Remove(CursorPosition - removeChars, removeChars);
+            var newCursorPosition = CursorPosition - removeChars;
+
+            CursorPosition = newCursorPosition;
+            Write(_text.ToString(newCursorPosition, _text.Length - newCursorPosition) + new string(WhiteSpace, removeChars));
+            CursorPosition = newCursorPosition;
+        }
+
         public KeyHandler(IConsole console, List<string> history, IAutoCompleteHandler autoCompleteHandler, int promptLength)
         {
-            _promptLength = Console.CursorLeft;
             Console2 = console;
 
             _history = history ?? new List<string>();
@@ -263,17 +268,15 @@ namespace Internal.ReadLine
                     { ConsoleKey.B, MoveCursorLeft },
                     { ConsoleKey.E, MoveCursorEnd },
                     { ConsoleKey.F, MoveCursorRight },
-                    { ConsoleKey.L, ClearLine },
+                    { ConsoleKey.L, ClearBuffer },
                     { ConsoleKey.P, PrevHistory },
                     { ConsoleKey.N, NextHistory },
-                    { ConsoleKey.U,  () => {
-                        ClearLine();
-                        _text.Clear(); } },
-                    { ConsoleKey.K,  () => ClearLine(Console2.CursorLeft) },
-                    { ConsoleKey.W,  () => {
-                        while (!IsStartOfLine() && _text[Console2.CursorLeft - 1] != ' ')
-                            Backspace(); } },
-                    { ConsoleKey.T, TransposeChars }
+                    { ConsoleKey.U, ClearBuffer },
+                    { ConsoleKey.K, () => ClearToEnd(CursorPosition) },
+                    { ConsoleKey.W, CutPreviousWord },
+                    { ConsoleKey.T, TransposeChars },
+                    { ConsoleKey.LeftArrow, MoveCursorLeftWord },
+                    { ConsoleKey.RightArrow, MoveCursorRightWord }
                 } },
                 { ConsoleModifiers.Shift, new Dictionary<ConsoleKey, Action> {
                     { ConsoleKey.Tab, () => {
@@ -292,7 +295,7 @@ namespace Internal.ReadLine
                 { ConsoleKey.RightArrow, MoveCursorRight },
                 { ConsoleKey.Backspace, Backspace },
                 { ConsoleKey.Delete, Delete },
-                { ConsoleKey.Escape, ClearLine },
+                { ConsoleKey.Escape, ClearBuffer },
                 { ConsoleKey.UpArrow, PrevHistory },
                 { ConsoleKey.DownArrow, NextHistory },
                 { ConsoleKey.Tab, () => {

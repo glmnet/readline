@@ -6,6 +6,10 @@ namespace ConsoleApplication
     {
         public static void Main(string[] args)
         {
+            Console.WindowWidth = 20;
+
+            Console.BufferWidth = 20;
+
             Console.WriteLine("ReadLine Library Demo");
             Console.WriteLine("---------------------");
             Console.WriteLine();
