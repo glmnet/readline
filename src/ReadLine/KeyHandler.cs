@@ -1,7 +1,7 @@
-using Internal.ReadLine.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Internal.ReadLine.Abstractions;
 
 namespace Internal.ReadLine
 {
@@ -15,7 +15,7 @@ namespace Internal.ReadLine
         private Dictionary<ConsoleModifiers, Dictionary<ConsoleKey, Action>> _keyActionsModifiers;
         private Dictionary<ConsoleKey, Action> _keyActions;
         private string[] _completions;
-        private int _completionStart;
+        private string _completionPrefix;
         private int _completionsIndex;
         private IConsole Console2;
 
@@ -28,7 +28,11 @@ namespace Internal.ReadLine
             get => _cursorPosition;
             set
             {
-                if (value < 0 || value > _text.Length) throw new ArgumentOutOfRangeException(nameof(value));
+                if (value < 0 || value > _text.Length)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(value));
+                }
+
                 var bufferWidth = Console2.BufferWidth;
                 var offset = value - _cursorPosition;
                 var col = Math.Abs(((offset % bufferWidth) + Console2.CursorLeft + bufferWidth) % bufferWidth);
@@ -41,7 +45,7 @@ namespace Internal.ReadLine
             }
         }
 
-        void Write(string value)
+        private void Write(string value)
         {
             Console2.Write(value);
             _cursorPosition += value.Length;
@@ -50,7 +54,9 @@ namespace Internal.ReadLine
         private void MoveCursorLeft()
         {
             if (CursorPosition > 0)
+            {
                 CursorPosition--;
+            }
         }
 
         private void MoveCursorHome() => CursorPosition = 0;
@@ -58,32 +64,51 @@ namespace Internal.ReadLine
         private void MoveCursorRight()
         {
             if (CursorPosition < _text.Length)
+            {
                 CursorPosition++;
+            }
         }
 
         private void MoveCursorEnd() => CursorPosition = _text.Length;
 
         private void MoveCursorLeftWord()
         {
-            if (CursorPosition == 0) return;
+            if (CursorPosition == 0)
+            {
+                return;
+            }
+
             var buffer = _text.ToString(0, CursorPosition);
             var trimmedBuffer = buffer.TrimEnd();
             var trimEnd = buffer.Length - trimmedBuffer.Length;
             var pos = trimmedBuffer.LastIndexOfAny(WordSeparators, CursorPosition - trimEnd - 1) + 1;
-            if (pos < 0) pos = 0;
+            if (pos < 0)
+            {
+                pos = 0;
+            }
+
             CursorPosition = pos;
         }
 
         private void MoveCursorRightWord()
         {
-            if (CursorPosition == _text.Length) return;
+            if (CursorPosition == _text.Length)
+            {
+                return;
+            }
+
             var buffer = _text.ToString(CursorPosition, _text.Length - CursorPosition);
             var trimmedBuffer = buffer.TrimStart();
             var trimStart = buffer.Length - trimmedBuffer.Length;
             var pos = buffer.IndexOfAny(WordSeparators, trimStart);
             if (pos < 0)
+            {
                 CursorPosition = _text.Length;
-            else CursorPosition += pos;
+            }
+            else
+            {
+                CursorPosition += pos;
+            }
         }
 
         private void ClearBuffer()
@@ -120,15 +145,23 @@ namespace Internal.ReadLine
             _text.Clear().Append(str);
             MoveCursorHome();
             if (str.Length < bufferLength)
+            {
                 Write(_text.ToString() + new string(WhiteSpace, bufferLength - str.Length));
+            }
             else
+            {
                 Write(_text.ToString());
+            }
+
             MoveCursorEnd();
         }
 
         private void WriteChar(char c)
         {
-            if (char.IsControl(c)) return;
+            if (char.IsControl(c))
+            {
+                return;
+            }
 
             int insertPos = CursorPosition;
             if (insertPos >= _text.Length)
@@ -154,13 +187,19 @@ namespace Internal.ReadLine
                 Write(_text.ToString(removePos, _text.Length - removePos) + " ");
                 CursorPosition = removePos;
             }
-            else ResetAutoComplete();
+            else
+            {
+                ResetAutoComplete();
+            }
         }
 
         private void Delete()
         {
             int deletePos = CursorPosition;
-            if (deletePos == _text.Length) return;
+            if (deletePos == _text.Length)
+            {
+                return;
+            }
 
             _text.Remove(deletePos, 1);
             Write(_text.ToString(deletePos, _text.Length - deletePos) + " ");
@@ -169,8 +208,20 @@ namespace Internal.ReadLine
 
         private void TransposeChars()
         {
-            if (CursorPosition == 0) return;
-            if (CursorPosition == _text.Length) CursorPosition -= 2; else CursorPosition -= 1;
+            if (CursorPosition == 0)
+            {
+                return;
+            }
+
+            if (CursorPosition == _text.Length)
+            {
+                CursorPosition -= 2;
+            }
+            else
+            {
+                CursorPosition -= 1;
+            }
+
             var transpose = _text.ToString(CursorPosition, 2);
             _text[CursorPosition] = transpose[1];
             _text[CursorPosition + 1] = transpose[0];
@@ -188,7 +239,9 @@ namespace Internal.ReadLine
             _completionsIndex++;
 
             if (_completionsIndex == _completions.Length)
+            {
                 _completionsIndex = 0;
+            }
 
             WriteAutoComplete();
         }
@@ -198,22 +251,16 @@ namespace Internal.ReadLine
             _completionsIndex--;
 
             if (_completionsIndex == -1)
+            {
                 _completionsIndex = _completions.Length - 1;
+            }
 
             WriteAutoComplete();
         }
 
         private void WriteAutoComplete()
         {
-            if (_text.ToString().Contains(" "))
-            {
-                var separator = _text.ToString().LastIndexOf(WhiteSpace);
-                SetBufferString(_text.ToString().Substring(0, separator) + " " + _completions[_completionsIndex]);
-            }
-            else
-            {
-                SetBufferString(_completions[_completionsIndex]);
-            }
+            SetBufferString(_completionPrefix + _completions[_completionsIndex]);
         }
 
         private void PrevHistory()
@@ -253,14 +300,23 @@ namespace Internal.ReadLine
 
         public void CutPreviousWord()
         {
-            if (CursorPosition < 1) return;
+            if (CursorPosition < 1)
+            {
+                return;
+            }
+
             var buffer = _text.ToString();
             var trimEndChars = buffer.Length - buffer.TrimEnd().Length + 1;
             var previousSpace = buffer.LastIndexOf(WhiteSpace, CursorPosition - trimEndChars);
             int removeChars;
             if (previousSpace == -1)
+            {
                 removeChars = CursorPosition;
-            else removeChars = CursorPosition - previousSpace - 1;
+            }
+            else
+            {
+                removeChars = CursorPosition - previousSpace - 1;
+            }
 
             _text.Remove(CursorPosition - removeChars, removeChars);
             var newCursorPosition = CursorPosition - removeChars;
@@ -324,19 +380,20 @@ namespace Internal.ReadLine
                     else
                     {
                         if (autoCompleteHandler == null)
-                            return;
-
+{                            return;
+}
                         string text = _text.ToString();
 
-                        _completionStart = text.LastIndexOfAny(autoCompleteHandler.Separators);
-                        _completionStart = _completionStart == -1 ? 0 : _completionStart + 1;
+                        var completionStart = text.LastIndexOfAny(autoCompleteHandler.Separators);
+                        completionStart = completionStart == -1 ? 0 : completionStart + 1;
+                        _completionPrefix = text.Substring(0, completionStart);
+                        _completions = autoCompleteHandler.GetSuggestions(text, completionStart);
 
-                        _completions = autoCompleteHandler.GetSuggestions(text, _completionStart);
                         _completions = _completions?.Length == 0 ? null : _completions;
 
                         if (_completions == null)
-                            return;
-
+{                            return;
+}
                         StartAutoComplete();
                     } } }
             };
@@ -351,12 +408,18 @@ namespace Internal.ReadLine
             }
 
             if (!_keyActionsModifiers.TryGetValue(keyInfo.Modifiers, out Dictionary<ConsoleKey, Action> d))
+            {
                 d = _keyActions;
+            }
 
             if (d.TryGetValue(keyInfo.Key, out Action action))
+            {
                 action();
+            }
             else
+            {
                 WriteChar(keyInfo.KeyChar);
+            }
         }
     }
 }
